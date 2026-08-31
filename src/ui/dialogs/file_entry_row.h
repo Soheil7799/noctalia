@@ -24,11 +24,10 @@ public:
   void setCallbacks(IndexCallback onClick, IndexCallback onMotion, IndexCallback onEnter, IndexCallback onLeave);
   /// Width of the checkbox hit zone from the row's left edge.
   ///
-  /// Multi-selection has to be reachable without modifiers: pointer events carry
-  /// none, and this shell receives no wl_keyboard.modifiers while the dialog is
-  /// up, so ctrl+click cannot be detected at all. Clicking the box is the
-  /// gesture instead, and the grid hit-tests it through
-  /// VirtualGridAdapter::onPointerPress -- which needs this measurement.
+  /// Multi-selection stays reachable without the keyboard: the checkbox builds a
+  /// set on its own, so Ctrl/Shift are accelerators rather than the only way in.
+  /// The grid hit-tests the zone through VirtualGridAdapter::onPointerPress,
+  /// which needs this measurement.
   [[nodiscard]] static float checkboxZoneWidth(float scale);
   void bind(
       Renderer& renderer, const FileEntry& entry, std::size_t index, float width, bool selected, bool hovered,

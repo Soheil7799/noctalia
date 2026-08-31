@@ -716,34 +716,6 @@ bool FileDialogView::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers,
     return false;
   }
 
-  // Multi-selection by keyboard. This is the only input path that sees
-  // modifiers -- clicks carry none anywhere in the codebase -- so Shift+arrow is
-  // the closest thing to the usual gesture that can be offered at all.
-  // Checked before the KeybindMatcher branches because those demand an exact
-  // modifier match and would never fire with Shift held.
-  if (multiEnabled() && (modifiers & KeyMod::Shift) != 0
-      && (sym == XKB_KEY_Up || sym == XKB_KEY_Down || sym == XKB_KEY_Left || sym == XKB_KEY_Right)) {
-    const int step = m_viewMode == ViewMode::Grid && (sym == XKB_KEY_Up || sym == XKB_KEY_Down)
-                         ? static_cast<int>(m_gridColumns)
-                         : 1;
-    const int delta = (sym == XKB_KEY_Up || sym == XKB_KEY_Left) ? -step : step;
-    if (m_selectedIndex != static_cast<std::size_t>(-1)) {
-      const int target = static_cast<int>(m_selectedIndex) + delta;
-      if (target >= 0 && target < static_cast<int>(m_visibleEntries.size())) {
-        extendSelectionTo(static_cast<std::size_t>(target));
-      }
-    }
-    return true;
-  }
-
-  // Toggle the entry under the cursor without touching the rest of the set.
-  if (multiEnabled() && (modifiers & KeyMod::Ctrl) != 0 && sym == XKB_KEY_space) {
-    if (m_selectedIndex != static_cast<std::size_t>(-1)) {
-      toggleIndex(m_selectedIndex);
-    }
-    return true;
-  }
-
   auto moveSelection = [this](int delta) {
     if (m_visibleEntries.empty()) {
       return;
@@ -815,6 +787,7 @@ void FileDialogView::applyFilter(bool resetScroll) {
   if (m_selectedIndex == static_cast<std::size_t>(-1)) {
     m_selectedIndex = firstSelectableIndex();
   }
+  m_cursorExplicit = false;
 
   if (resetScroll) {
     if (m_listGrid != nullptr) {
@@ -1094,10 +1067,33 @@ void FileDialogView::selectIndex(std::size_t index) {
     return;
   }
   m_selectedIndex = index;
+  m_cursorExplicit = true;
   syncGridSelection();
   updateFilenameFieldFromSelection();
   updateControls();
   focusList();
+  ensureSelectionVisible();
+  requestRedraw();
+}
+
+void FileDialogView::extendSelectionTo(std::size_t index) {
+  if (!multiEnabled() || index >= m_visibleEntries.size()) {
+    return;
+  }
+  // Anchor at the cursor and take everything between, which is what Shift does
+  // everywhere else.
+  const std::size_t anchor = m_selectedIndex < m_visibleEntries.size() ? m_selectedIndex : index;
+  const std::size_t from = std::min(anchor, index);
+  const std::size_t to = std::max(anchor, index);
+  m_multiSelected.clear();
+  for (std::size_t i = from; i <= to; ++i) {
+    if (isSelectableIndex(i)) {
+      m_multiSelected.push_back(i);
+    }
+  }
+  m_selectedIndex = index;
+  syncGridSelection();
+  updateControls();
   ensureSelectionVisible();
   requestRedraw();
 }
@@ -1128,18 +1124,29 @@ void FileDialogView::handleEntryClick(std::size_t index) {
   }
 
   if (multiEnabled()) {
-    // Every click toggles, whether it landed on the checkbox or the row.
-    //
-    // Ctrl/shift were tried and cannot work: this client receives no
-    // wl_keyboard.modifiers while the dialog is up, so WaylandSeat::modifiers()
-    // reports nothing held and a modified click is indistinguishable from a
-    // plain one. Branching on it produced the worst outcome -- a plain click
-    // silently cleared the selection, so ctrl+click looked like it "removed the
-    // last one and added the new thing".
-    //
-    // Replace-on-click is also wrong here regardless: it would discard boxes the
-    // user had already ticked, and with no modifier to hold there would be no
-    // way to avoid it.
+    // Three gestures, in priority order. Checkbox presses never reach here: the
+    // adapter consumes them in onPointerPress, so this is always a row click.
+    const std::uint32_t mods = m_host != nullptr ? m_host->currentModifiers() : 0U;
+    if ((mods & KeyMod::Shift) != 0U) {
+      extendSelectionTo(index);
+      return;
+    }
+    if ((mods & KeyMod::Ctrl) != 0U) {
+      toggleIndex(index);
+      m_selectedIndex = index; // the cursor follows, so a later Shift anchors here
+      syncGridSelection();
+      updateControls();
+      ensureSelectionVisible();
+      requestRedraw();
+      return;
+    }
+    // Unmodified row click picks exactly one, matching single-selection mode;
+    // the checkbox is the discoverable way to build a set without the keyboard.
+    if (m_multiSelected.size() == 1 && m_multiSelected.front() == index) {
+      submitDialog(); // second click on the sole selection, as in single mode
+      return;
+    }
+    m_multiSelected.clear();
     toggleIndex(index);
     return;
   }
@@ -1310,6 +1317,19 @@ void FileDialogView::syncGridSelection() {
   if (m_gridGrid != nullptr) {
     m_gridGrid->setSelectedIndex(selection);
   }
+
+  // The grid repaints the cell it knows changed, but in multi mode the rows paint
+  // from isIndexSelected(), so a click that clears or extends a set changes rows
+  // the grid has no idea about. Without this they keep their last painted state
+  // until something else forces a rebind -- hovering them, typically.
+  if (multiEnabled()) {
+    if (m_listGrid != nullptr) {
+      m_listGrid->notifyDataChanged();
+    }
+    if (m_gridGrid != nullptr) {
+      m_gridGrid->notifyDataChanged();
+    }
+  }
 }
 
 std::size_t FileDialogView::firstSelectableIndex() const {
@@ -1331,10 +1351,10 @@ bool FileDialogView::isIndexSelected(std::size_t index) const {
   if (!multiEnabled()) {
     return index == m_selectedIndex;
   }
-  // With nothing explicitly picked yet the cursor still reads as selected, so
-  // the dialog never looks like it has lost focus.
+  // Only once the user has actually moved the cursor. On open it sits on the
+  // first entry, and painting that would show a selection nobody made.
   if (m_multiSelected.empty()) {
-    return index == m_selectedIndex;
+    return m_cursorExplicit && index == m_selectedIndex;
   }
   return std::ranges::find(m_multiSelected, index) != m_multiSelected.end();
 }
@@ -1353,28 +1373,6 @@ void FileDialogView::toggleIndex(std::size_t index) {
   syncGridSelection();
   updateControls();
   focusList();
-  ensureSelectionVisible();
-  requestRedraw();
-}
-
-void FileDialogView::extendSelectionTo(std::size_t index) {
-  if (!multiEnabled() || index >= m_visibleEntries.size()) {
-    return;
-  }
-  // Anchor at the cursor and take everything between, which is what Shift does
-  // everywhere else.
-  const std::size_t anchor = m_selectedIndex < m_visibleEntries.size() ? m_selectedIndex : index;
-  const std::size_t from = std::min(anchor, index);
-  const std::size_t to = std::max(anchor, index);
-  m_multiSelected.clear();
-  for (std::size_t i = from; i <= to; ++i) {
-    if (isSelectableIndex(i)) {
-      m_multiSelected.push_back(i);
-    }
-  }
-  m_selectedIndex = index;
-  syncGridSelection();
-  updateControls();
   ensureSelectionVisible();
   requestRedraw();
 }

@@ -111,6 +111,7 @@ private:
   [[nodiscard]] bool multiEnabled() const;
   [[nodiscard]] bool isIndexSelected(std::size_t index) const;
   void toggleIndex(std::size_t index);
+  /// Shift+click: select the run between the cursor and `index`.
   void extendSelectionTo(std::size_t index);
   [[nodiscard]] bool isTextInputFocused() const;
   [[nodiscard]] std::filesystem::path selectedPath() const;
@@ -178,6 +179,10 @@ private:
   /// Additional selected indices, multi mode only. Indices are per-directory,
   /// so this is cleared whenever the listing is rebuilt.
   std::vector<std::size_t> m_multiSelected;
+  /// Whether the cursor landed somewhere because the user put it there. A freshly
+  /// listed directory parks it on the first entry, which must not read as a
+  /// selection in multi mode -- the dialog would open claiming a file is chosen.
+  bool m_cursorExplicit = false;
   std::size_t m_gridColumns = 1;
   float m_listRowHeight = 0.0F;
   float m_gridCellSize = 0.0F;
