@@ -26,6 +26,7 @@
 #include "dbus/notification/notification_dbus_host.h"
 #include "dbus/notification/notification_service.h"
 #include "dbus/polkit/polkit_agent.h"
+#include "dbus/portal/file_chooser_portal.h"
 #include "dbus/polkit/polkit_poll_source.h"
 #include "dbus/polkit/polkit_session_support.h"
 #include "dbus/power/power_profiles_service.h"
