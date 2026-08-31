@@ -2,6 +2,7 @@
 
 #include "core/deferred_call.h"
 #include "core/input/key_modifiers.h"
+#include "core/log.h"
 #include "core/input/key_symbols.h"
 #include "core/input/keybind_matcher.h"
 #include "i18n/i18n.h"
@@ -28,6 +29,8 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace {
+  constexpr Logger kLog("filedialog");
+
 
   constexpr std::size_t kListRowOverscan = 3;
   constexpr std::size_t kGridRowOverscan = 1;
@@ -47,6 +50,23 @@ public:
   /// Multi-selection therefore cannot come from the grid: the view supplies the
   /// predicate and the adapter paints from that instead.
   void setIsSelectedFn(std::function<bool(std::size_t)> fn) { m_isSelected = std::move(fn); }
+  void setMultiSelectFn(std::function<bool()> fn) { m_multiSelect = std::move(fn); }
+  void setOnToggleFn(std::function<void(std::size_t)> fn) { m_onToggle = std::move(fn); }
+
+  /// The grid offers this hook for overlays that want a press before the normal
+  /// activation. Returning true stops the click from also becoming a selection,
+  /// so ticking a box never doubles as "pick only this one".
+  bool onPointerPress(std::size_t index, float cellLocalX, float /*cellLocalY*/, float /*cellWidth*/,
+                      float /*cellHeight*/) override {
+    if (!m_multiSelect || !m_multiSelect() || !m_onToggle) {
+      return false;
+    }
+    if (cellLocalX > FileEntryRow::checkboxZoneWidth(m_scale)) {
+      return false;
+    }
+    m_onToggle(index);
+    return true;
+  }
 
   [[nodiscard]] std::size_t itemCount() const override { return m_entries == nullptr ? 0 : m_entries->size(); }
 
@@ -59,6 +79,7 @@ public:
     auto* row = static_cast<FileEntryRow*>(&tile);
     const bool disabled = m_isSelectable && !m_isSelectable(index);
     const bool isSel = m_isSelected ? m_isSelected(index) : selected;
+    row->setMultiSelect(m_multiSelect && m_multiSelect());
     row->bind(*m_renderer, (*m_entries)[index], index, row->width(), isSel, hovered && !isSel, disabled);
   }
 
@@ -75,6 +96,8 @@ private:
   std::function<bool(std::size_t)> m_isSelectable;
   std::function<bool(std::size_t)> m_isSelected;
   std::function<void(std::size_t)> m_onActivate;
+  std::function<bool()> m_multiSelect;
+  std::function<void(std::size_t)> m_onToggle;
 };
 
 class FileGridAdapter final : public VirtualGridAdapter {
@@ -353,6 +376,8 @@ void FileDialogView::create() {
   m_listAdapter->setEntries(&m_visibleEntries);
   m_listAdapter->setSelectableFn([this](std::size_t idx) { return isSelectableIndex(idx); });
   m_listAdapter->setIsSelectedFn([this](std::size_t idx) { return isIndexSelected(idx); });
+  m_listAdapter->setMultiSelectFn([this]() { return multiEnabled(); });
+  m_listAdapter->setOnToggleFn([this](std::size_t idx) { toggleIndex(idx); });
   m_listAdapter->setOnActivate([this](std::size_t idx) {
     const std::weak_ptr<void> aliveGuard = m_aliveGuard;
     DeferredCall::callLater([this, aliveGuard, idx]() {
@@ -1103,10 +1128,18 @@ void FileDialogView::handleEntryClick(std::size_t index) {
   }
 
   if (multiEnabled()) {
-    // Clicks toggle rather than submit: modifiers never reach click handlers in
-    // this codebase (only handleGlobalKey sees them), so ctrl+click is not
-    // available and a plain click has to carry the whole gesture. Submitting is
-    // therefore the Open button's job alone while a set is being built.
+    // Every click toggles, whether it landed on the checkbox or the row.
+    //
+    // Ctrl/shift were tried and cannot work: this client receives no
+    // wl_keyboard.modifiers while the dialog is up, so WaylandSeat::modifiers()
+    // reports nothing held and a modified click is indistinguishable from a
+    // plain one. Branching on it produced the worst outcome -- a plain click
+    // silently cleared the selection, so ctrl+click looked like it "removed the
+    // last one and added the new thing".
+    //
+    // Replace-on-click is also wrong here regardless: it would discard boxes the
+    // user had already ticked, and with no modifier to hold there would be no
+    // way to avoid it.
     toggleIndex(index);
     return;
   }

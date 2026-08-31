@@ -22,10 +22,22 @@ public:
   [[nodiscard]] float rowHeight() const noexcept { return m_rowHeight; }
 
   void setCallbacks(IndexCallback onClick, IndexCallback onMotion, IndexCallback onEnter, IndexCallback onLeave);
+  /// Width of the checkbox hit zone from the row's left edge.
+  ///
+  /// Multi-selection has to be reachable without modifiers: pointer events carry
+  /// none, and this shell receives no wl_keyboard.modifiers while the dialog is
+  /// up, so ctrl+click cannot be detected at all. Clicking the box is the
+  /// gesture instead, and the grid hit-tests it through
+  /// VirtualGridAdapter::onPointerPress -- which needs this measurement.
+  [[nodiscard]] static float checkboxZoneWidth(float scale);
   void bind(
       Renderer& renderer, const FileEntry& entry, std::size_t index, float width, bool selected, bool hovered,
       bool disabled
   );
+  /// Show a checkbox ahead of the icon. Multi-selection is otherwise invisible
+  /// until something is already selected, which leaves the user guessing whether
+  /// picking several is even possible.
+  void setMultiSelect(bool enabled);
   void clear();
   void setVisualState(bool selected, bool hovered, bool disabled);
 
@@ -38,8 +50,10 @@ private:
   bool m_selected = false;
   bool m_hovered = false;
   bool m_disabled = false;
+  bool m_multiSelect = false;
   Box* m_background = nullptr;
   Flex* m_row = nullptr;
+  Glyph* m_check = nullptr;
   Glyph* m_icon = nullptr;
   Label* m_name = nullptr;
   Label* m_size = nullptr;

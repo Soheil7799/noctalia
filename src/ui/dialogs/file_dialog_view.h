@@ -33,6 +33,10 @@ public:
   virtual void accept(std::optional<std::filesystem::path> result) = 0;
   /// Multi-selection result. Defaulted so hosts that can only ever produce one
   /// path -- the settings modal -- need no change; they collapse to the first.
+  /// Modifiers held right now. Pointer events carry none, so a click handler
+  /// has no other way to tell ctrl+click from a plain click. Defaulted to "none"
+  /// so a host without a seat behaves exactly as before.
+  [[nodiscard]] virtual std::uint32_t currentModifiers() const { return 0; }
   virtual void acceptMultiple(std::vector<std::filesystem::path> results) {
     accept(results.empty() ? std::nullopt : std::optional{std::move(results.front())});
   }
