@@ -1,5 +1,7 @@
 #include "ui/dialogs/file_dialog_popup.h"
 
+#include "ui/dialogs/file_dialog.h"
+
 namespace {
 }
 
@@ -115,6 +117,8 @@ void FileDialogPopup::accept(std::optional<std::filesystem::path> result) {
   closeAfterAccept();
   FileDialog::complete(std::move(result));
 }
+
+bool FileDialogPopup::wantsParentKeyboardGrab() const { return FileDialog::currentOptions().grabKeyboard; }
 
 std::uint32_t FileDialogPopup::currentModifiers() const {
   const auto* connection = wayland();

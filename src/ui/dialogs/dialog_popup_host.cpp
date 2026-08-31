@@ -2,6 +2,7 @@
 
 #include "config/config_service.h"
 #include "core/deferred_call.h"
+#include "core/log.h"
 #include "core/input/key_symbols.h"
 #include "core/ui_phase.h"
 #include "render/render_context.h"
@@ -11,8 +12,11 @@
 #include "ui/popup_chrome.h"
 #include "ui/popup_parent.h"
 #include "ui/style.h"
+#include "wayland/layer_surface.h"
 #include "wayland/popup_surface.h"
 #include "wayland/wayland_connection.h"
+
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "wayland/wayland_seat.h"
 #include "xdg-shell-client-protocol.h"
 
@@ -98,6 +102,23 @@ bool DialogPopupHost::openPopup(std::uint32_t width, std::uint32_t height) {
     return false;
   }
   m_parentSurface = parentContext->surface;
+
+  // Before the popup maps, not after: the compositor decides keyboard routing
+  // for the popup when it is mapped, so flipping the parent afterwards leaves
+  // this popup keyboard-less for its whole lifetime.
+  if (wantsParentKeyboardGrab() && parentContext->layerSurface != nullptr) {
+    m_grabbedKeyboardLayerSurface = parentContext->layerSurface;
+    m_grabbedKeyboardWlSurface = parentContext->surface;
+    // Exclusive, not OnDemand: OnDemand only hands over the keyboard once the
+    // surface is clicked, so a dialog that opens under the pointer would start
+    // with no keyboard and modifiers reading 0 until the first click landed.
+    zwlr_layer_surface_v1_set_keyboard_interactivity(
+        m_grabbedKeyboardLayerSurface, static_cast<std::uint32_t>(LayerShellKeyboard::Exclusive)
+    );
+    if (m_grabbedKeyboardWlSurface != nullptr) {
+      wl_surface_commit(m_grabbedKeyboardWlSurface);
+    }
+  }
 
   auto surface = std::make_unique<PopupSurface>(*m_wayland);
   surface->setRenderContext(m_renderContext);
@@ -211,6 +232,7 @@ void DialogPopupHost::destroyPopup() {
     m_attachedToHost = false;
   }
   m_pointerInside = false;
+  restoreParentKeyboard();
   m_parentSurface = nullptr;
   m_inputDispatcher.setTextInputContext(nullptr, nullptr);
   m_inputDispatcher.setSceneRoot(nullptr);
@@ -226,6 +248,21 @@ void DialogPopupHost::destroyPopup() {
   m_sceneRoot.reset();
   m_surface.reset();
   m_chrome = {};
+}
+
+void DialogPopupHost::restoreParentKeyboard() {
+  if (m_grabbedKeyboardLayerSurface == nullptr) {
+    return;
+  }
+  // None, not the previous value: only a parent that had none is ever raised.
+  zwlr_layer_surface_v1_set_keyboard_interactivity(
+      m_grabbedKeyboardLayerSurface, static_cast<std::uint32_t>(LayerShellKeyboard::None)
+  );
+  if (m_grabbedKeyboardWlSurface != nullptr) {
+    wl_surface_commit(m_grabbedKeyboardWlSurface);
+  }
+  m_grabbedKeyboardLayerSurface = nullptr;
+  m_grabbedKeyboardWlSurface = nullptr;
 }
 
 void DialogPopupHost::closeAfterAccept() { destroyPopup(); }

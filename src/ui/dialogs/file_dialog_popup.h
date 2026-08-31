@@ -33,6 +33,7 @@ public:
   [[nodiscard]] InputArea* focusedArea() const override;
   void accept(std::optional<std::filesystem::path> result) override;
   [[nodiscard]] std::uint32_t currentModifiers() const override;
+  [[nodiscard]] bool wantsParentKeyboardGrab() const override;
   void acceptMultiple(std::vector<std::filesystem::path> results) override;
   void cancel() override { DialogPopupHost::cancel(); }
 
