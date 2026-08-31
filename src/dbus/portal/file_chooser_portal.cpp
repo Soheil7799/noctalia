@@ -67,10 +67,63 @@ namespace {
     return std::filesystem::path{text};
   }
 
-  /// Portal filters are globs ("*.png"); FileDialogOptions::extensions wants
-  /// ".png" (see DirectoryScanner::imageExtensionFilter). Anything that is not a
-  /// simple "*.ext" glob -- mime types, "*", "*.tar.*" -- is dropped rather than
-  /// guessed at, because a wrong filter hides files the user asked for.
+  /// A glob reduced to the ".ext" form DirectoryScanner expects, or nullopt
+  /// when it cannot be expressed as one.
+  ///
+  /// Real-world filters are not literal: browsers spell case-insensitivity as
+  /// character classes, so Brave asks for `*.[pP][nN][gG]` rather than `*.png`.
+  /// Treating that as literal text yields ".[pp][nn][gg]", which matches no file
+  /// on earth -- the dialog then opens on a directory of images and reports that
+  /// none of them match.
+  std::optional<std::string> extensionFromGlob(std::string_view glob) {
+    if (!glob.starts_with("*.")) {
+      return std::nullopt;
+    }
+    const std::string_view rest = glob.substr(2);
+    if (rest.empty()) {
+      return std::nullopt;
+    }
+
+    std::string ext = ".";
+    for (std::size_t i = 0; i < rest.size();) {
+      const char c = rest[i];
+      if (c == '*' || c == '?') {
+        return std::nullopt; // still a wildcard: not a fixed extension
+      }
+      if (c == '[') {
+        const std::size_t close = rest.find(']', i + 1);
+        if (close == std::string_view::npos) {
+          return std::nullopt;
+        }
+        const std::string_view cls = rest.substr(i + 1, close - i - 1);
+        if (cls.empty()) {
+          return std::nullopt;
+        }
+        // Only a case-variant class collapses to one character. Anything else
+        // ([0-9], [abc]) is a genuine alternation this cannot represent.
+        const char first = static_cast<char>(std::tolower(static_cast<unsigned char>(cls.front())));
+        for (const char member : cls) {
+          if (static_cast<char>(std::tolower(static_cast<unsigned char>(member))) != first) {
+            return std::nullopt;
+          }
+        }
+        ext.push_back(first);
+        i = close + 1;
+        continue;
+      }
+      ext.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+      ++i;
+    }
+    return ext;
+  }
+
+  /// Portal filters -> FileDialogOptions::extensions.
+  ///
+  /// The dialog has no filter dropdown, so every filter's patterns are merged.
+  /// That makes a catch-all decisive: browsers send an "All Files" entry of
+  /// `*.*` alongside the specific types, and if the user is offered "all files"
+  /// at all, filtering to a subset would hide files they are entitled to pick.
+  /// So one catch-all disables filtering entirely.
   std::vector<std::string> extensionsFromFilters(const Vardict& options) {
     std::vector<std::string> extensions;
     const auto filters = optionOf<std::vector<Filter>>(options, "filters");
@@ -84,16 +137,13 @@ namespace {
           continue; // mime type: nothing to match on a filename
         }
         const std::string& glob = pattern.get<1>();
-        if (glob.size() < 3 || !glob.starts_with("*.")) {
-          continue;
+        if (glob == "*" || glob == "*.*") {
+          return {}; // catch-all present: show everything
         }
-        std::string ext = glob.substr(1); // "*.png" -> ".png"
-        if (ext.find('*') != std::string::npos || ext.find('?') != std::string::npos) {
-          continue;
-        }
-        std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (std::ranges::find(extensions, ext) == extensions.end()) {
-          extensions.push_back(std::move(ext));
+        if (auto ext = extensionFromGlob(glob)) {
+          if (std::ranges::find(extensions, *ext) == extensions.end()) {
+            extensions.push_back(std::move(*ext));
+          }
         }
       }
     }
