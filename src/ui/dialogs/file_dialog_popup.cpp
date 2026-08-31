@@ -105,3 +105,8 @@ void FileDialogPopup::accept(std::optional<std::filesystem::path> result) {
   closeAfterAccept();
   FileDialog::complete(std::move(result));
 }
+
+void FileDialogPopup::acceptMultiple(std::vector<std::filesystem::path> results) {
+  closeAfterAccept();
+  FileDialog::completeMultiple(std::move(results));
+}

@@ -226,7 +226,7 @@ struct FileChooserPortal::Impl {
   /// FileDialogOptions and how the chosen path becomes the result URIs.
   void run(
       CallResult&& result, const sdbus::ObjectPath& handle, FileDialogOptions options,
-      std::function<std::vector<std::string>(const std::filesystem::path&)> toUris
+      std::function<std::vector<std::string>(const std::filesystem::path&)> toUris, bool multiple = false
   ) {
     if (busy()) {
       kLog.warn("file chooser: a dialog is already open; refusing concurrent request");
@@ -239,15 +239,36 @@ struct FileChooserPortal::Impl {
 
     // Hop to the main loop: the dialog builds Wayland surfaces and scene nodes,
     // which must not happen inside a bus dispatch.
-    DeferredCall::callLater([this, options = std::move(options), toUris = std::move(toUris)]() mutable {
-      const bool opened =
-          FileDialog::open(std::move(options), [this, toUris](std::optional<std::filesystem::path> picked) {
-            if (!picked.has_value()) {
-              finish(kResponseCancelled, {});
-              return;
+    DeferredCall::callLater([this, options = std::move(options), toUris = std::move(toUris), multiple]() mutable {
+      bool opened = false;
+      if (multiple) {
+        opened = FileDialog::openMultiple(
+            std::move(options),
+            [this, toUris](std::vector<std::filesystem::path> picked) {
+              if (picked.empty()) {
+                finish(kResponseCancelled, {});
+                return;
+              }
+              // toUris maps one path; a set is the concatenation, which keeps
+              // SaveFiles (one folder, many names) working through the same hook.
+              std::vector<std::string> uris;
+              for (const auto& path : picked) {
+                for (auto& uri : toUris(path)) {
+                  uris.push_back(std::move(uri));
+                }
+              }
+              finish(kResponseSuccess, std::move(uris));
             }
-            finish(kResponseSuccess, toUris(*picked));
-          });
+        );
+      } else {
+        opened = FileDialog::open(std::move(options), [this, toUris](std::optional<std::filesystem::path> picked) {
+          if (!picked.has_value()) {
+            finish(kResponseCancelled, {});
+            return;
+          }
+          finish(kResponseSuccess, toUris(*picked));
+        });
+      }
       if (!opened) {
         kLog.warn("file chooser: dialog refused to open");
         finish(kResponseError, {});
@@ -279,13 +300,16 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 if (auto folder = pathFromBytes(options, "current_folder")) {
                   dialog.startDirectory = std::move(*folder);
                 }
-                // `multiple` is deliberately unhandled: the dialog is
-                // single-selection (FileDialogView::m_selectedIndex) and its
-                // callback yields one path. Returning a single URI is within
-                // spec; widening it is a separate change to the view.
-                impl->run(std::move(result), handle, std::move(dialog), [](const std::filesystem::path& picked) {
-                  return std::vector<std::string>{toFileUri(picked)};
-                });
+                const bool multiple = optionOf<bool>(options, "multiple").value_or(false);
+                impl->run(
+                    std::move(result), handle, std::move(dialog),
+                    [](const std::filesystem::path& picked) {
+                      return std::vector<std::string>{toFileUri(picked)};
+                    },
+                    // A folder pick is one path by definition, so `multiple`
+                    // only means anything for files.
+                    multiple && !directory
+                );
               }),
           sdbus::registerMethod("SaveFile")
               .implementedAs([impl](
