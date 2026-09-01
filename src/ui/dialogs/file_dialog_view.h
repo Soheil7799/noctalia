@@ -19,6 +19,7 @@ class InputArea;
 class Label;
 class Node;
 class Renderer;
+class Select;
 class VirtualGridView;
 
 class FileDialogHost {
@@ -109,6 +110,9 @@ private:
   [[nodiscard]] std::size_t firstSelectableIndex() const;
   [[nodiscard]] bool isSelectableIndex(std::size_t index) const;
   [[nodiscard]] bool multiEnabled() const;
+  /// The extension list the current filter selection implies.
+  [[nodiscard]] const std::vector<std::string>& activeExtensions() const;
+  void applyFilterIndex(std::size_t index);
   [[nodiscard]] bool isIndexSelected(std::size_t index) const;
   void toggleIndex(std::size_t index);
   /// Shift+click: select the run between the cursor and `index`.
@@ -152,6 +156,7 @@ private:
   Button* m_nameSortButton = nullptr;
   Button* m_sizeSortButton = nullptr;
   Button* m_dateSortButton = nullptr;
+  Select* m_filterSelect = nullptr;
   VirtualGridView* m_listGrid = nullptr;
   Label* m_listEmptyLabel = nullptr;
   Flex* m_gridContainer = nullptr;
@@ -183,6 +188,8 @@ private:
   /// listed directory parks it on the first entry, which must not read as a
   /// selection in multi mode -- the dialog would open claiming a file is chosen.
   bool m_cursorExplicit = false;
+  /// Index into m_options.filters. Meaningless when there are no filters.
+  std::size_t m_currentFilter = 0;
   std::size_t m_gridColumns = 1;
   float m_listRowHeight = 0.0F;
   float m_gridCellSize = 0.0F;

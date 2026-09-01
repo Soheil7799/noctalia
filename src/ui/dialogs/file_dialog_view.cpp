@@ -506,6 +506,15 @@ void FileDialogView::create() {
               .onChange = [this](const std::string&) { updateControls(); },
               .onSubmit = [this](const std::string&) { submitDialog(); },
           }),
+          ui::select({
+              .out = &m_filterSelect,
+              .fontSize = Style::fontSizeBody * scale,
+              .controlHeight = Style::controlHeight * scale,
+              .horizontalPadding = Style::spaceMd * scale,
+              .visible = false, // only a caller that supplied filters gets one
+              .participatesInLayout = false,
+              .onSelectionChanged = [this](std::size_t index, std::string_view) { applyFilterIndex(index); },
+          }),
           ui::spacer(),
           ui::button({
               .out = &m_cancelButton,
@@ -573,6 +582,24 @@ void FileDialogView::onOpen(std::string_view /*context*/) {
   m_showHiddenFiles = m_options.showHiddenFiles;
   m_selectedIndex = static_cast<std::size_t>(-1);
   m_thumbnailRefreshPending = false;
+  m_currentFilter = m_options.currentFilter < m_options.filters.size() ? m_options.currentFilter : 0;
+
+  if (m_filterSelect != nullptr) {
+    const bool hasFilters = !m_options.filters.empty();
+    // Shown even for a single filter: it is the only thing telling the user why
+    // files are missing from a directory they know is not empty.
+    m_filterSelect->setVisible(hasFilters);
+    m_filterSelect->setParticipatesInLayout(hasFilters);
+    if (hasFilters) {
+      std::vector<std::string> names;
+      names.reserve(m_options.filters.size());
+      for (const auto& filter : m_options.filters) {
+        names.push_back(filter.name);
+      }
+      m_filterSelect->setOptions(std::move(names));
+      m_filterSelect->setSelectedIndexSilently(m_currentFilter);
+    }
+  }
 
   if (m_titleLabel != nullptr) {
     m_titleLabel->setText(m_options.title);
@@ -780,7 +807,7 @@ bool FileDialogView::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers,
 }
 
 void FileDialogView::refreshDirectory() {
-  m_entries = m_scanner.scan(m_currentDirectory, m_options.extensions, m_showHiddenFiles, m_sortField, m_sortOrder);
+  m_entries = m_scanner.scan(m_currentDirectory, activeExtensions(), m_showHiddenFiles, m_sortField, m_sortOrder);
   rebuildBreadcrumb();
   applyFilter(true);
 }
@@ -1375,6 +1402,25 @@ bool FileDialogView::multiEnabled() const {
   // Save names one file and SelectFolder names one directory; only Open has a
   // meaning for a set.
   return m_options.allowMultiple && m_options.mode == FileDialogMode::Open;
+}
+
+const std::vector<std::string>& FileDialogView::activeExtensions() const {
+  if (m_currentFilter < m_options.filters.size()) {
+    return m_options.filters[m_currentFilter].extensions;
+  }
+  return m_options.extensions;
+}
+
+void FileDialogView::applyFilterIndex(std::size_t index) {
+  if (index >= m_options.filters.size() || index == m_currentFilter) {
+    return;
+  }
+  m_currentFilter = index;
+  // Re-list rather than hide rows: the filter decides what the scanner returns,
+  // and the selection may no longer exist under the new one.
+  m_selectedIndex = static_cast<std::size_t>(-1);
+  m_multiSelected.clear();
+  refreshDirectory();
 }
 
 bool FileDialogView::isIndexSelected(std::size_t index) const {

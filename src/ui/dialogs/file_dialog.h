@@ -18,11 +18,25 @@ enum class FileDialogViewMode : std::uint8_t {
   Grid,
 };
 
+/// One named group of extensions, as offered in the dialog's filter dropdown.
+struct FileDialogFilter {
+  std::string name;
+  /// Empty matches everything -- that is how an "All Files" entry is expressed.
+  std::vector<std::string> extensions;
+};
+
 struct FileDialogOptions {
   FileDialogMode mode = FileDialogMode::Open;
   FileDialogViewMode defaultViewMode = FileDialogViewMode::List;
   std::filesystem::path startDirectory;
   std::vector<std::string> extensions;
+  /// Named alternatives, shown as a dropdown. When non-empty the selected group
+  /// decides what is listed and `extensions` is ignored, so a caller offering
+  /// "Images" and "All Files" lets the user switch rather than merging both --
+  /// merging means the widest entry always wins and filtering does nothing.
+  std::vector<FileDialogFilter> filters;
+  /// Which of `filters` starts selected. Out-of-range falls back to the first.
+  std::size_t currentFilter = 0;
   std::string defaultFilename;
   std::string title;
   /// Overrides the confirm button's text when the caller asked for specific

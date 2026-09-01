@@ -68,6 +68,54 @@ namespace {
     return std::filesystem::path{text};
   }
 
+  /// One wire filter -> its extension list. Patterns that are mime types carry
+  /// nothing matchable against a filename, so they are skipped.
+  std::vector<std::string> extensionsOfFilter(const Filter& filter) {
+    std::vector<std::string> globs;
+    for (const auto& pattern : filter.get<1>()) {
+      if (pattern.get<0>() != 0U) {
+        continue;
+      }
+      globs.push_back(pattern.get<1>());
+    }
+    return file_chooser_util::extensionsFromGlobs(globs);
+  }
+
+  /// Portal filters -> the dialog's named filter groups, kept separate rather
+  /// than merged so the user can switch between them. A caller that offers
+  /// "Images" and "All Files" is offering a choice; merging the two applies the
+  /// wider one permanently and filtering silently stops meaning anything.
+  std::vector<FileDialogFilter> filtersFromOptions(const Vardict& options) {
+    const auto filters = optionOf<std::vector<Filter>>(options, "filters");
+    if (!filters.has_value()) {
+      return {};
+    }
+
+    std::vector<FileDialogFilter> out;
+    out.reserve(filters->size());
+    for (const auto& filter : *filters) {
+      out.push_back(FileDialogFilter{.name = filter.get<0>(), .extensions = extensionsOfFilter(filter)});
+    }
+    return out;
+  }
+
+  /// Which entry current_filter names. Matched on the label, which is the only
+  /// stable identity a filter has on the wire; an unmatched or absent one starts
+  /// on the first, as xdg-desktop-portal's own backends do.
+  std::size_t currentFilterIndex(const Vardict& options, const std::vector<FileDialogFilter>& filters) {
+    const auto current = optionOf<Filter>(options, "current_filter");
+    if (!current.has_value()) {
+      return 0;
+    }
+    const std::string& name = current->get<0>();
+    for (std::size_t i = 0; i < filters.size(); ++i) {
+      if (filters[i].name == name) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
   /// Portal filters -> FileDialogOptions::extensions. Unpacks the wire format;
   /// the reduction itself lives in file_chooser_util so it can be tested.
   std::vector<std::string> extensionsFromFilters(const Vardict& options) {
@@ -219,6 +267,8 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 }
                 if (!directory) {
                   dialog.extensions = extensionsFromFilters(options);
+                  dialog.filters = filtersFromOptions(options);
+                  dialog.currentFilter = currentFilterIndex(options, dialog.filters);
                 }
                 if (auto folder = pathFromBytes(options, "current_folder")) {
                   dialog.startDirectory = std::move(*folder);
@@ -246,6 +296,8 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                   dialog.acceptLabel = file_chooser_util::stripMnemonics(*label);
                 }
                 dialog.extensions = extensionsFromFilters(options);
+                dialog.filters = filtersFromOptions(options);
+                dialog.currentFilter = currentFilterIndex(options, dialog.filters);
                 if (auto name = optionOf<std::string>(options, "current_name")) {
                   dialog.defaultFilename = std::move(*name);
                 }
