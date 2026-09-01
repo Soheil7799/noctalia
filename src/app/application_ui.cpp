@@ -1,4 +1,3 @@
-#include "ui/dialogs/file_dialog_panel.h"
 #include "app/main_loop.h"
 #include "application.h"
 #include "application_internal.h"
@@ -87,6 +86,7 @@
 #include "ui/controls/input.h"
 #include "ui/dialogs/color_picker_dialog.h"
 #include "ui/dialogs/file_dialog.h"
+#include "ui/dialogs/file_dialog_panel.h"
 #include "ui/dialogs/glyph_picker_dialog.h"
 #include "ui/style.h"
 #include "util/file_utils.h"

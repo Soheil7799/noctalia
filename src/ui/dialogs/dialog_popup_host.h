@@ -172,7 +172,6 @@ protected:
   [[nodiscard]] virtual bool preDispatchKeyboard(const KeyboardEvent& /*event*/) { return false; }
   virtual void onSheetClose() {}
 
-
   // Owned shared state. Subclasses don't manipulate these directly outside
   // of the `populateContent` / `layoutSheet` hooks where appropriate.
   WaylandConnection* m_wayland = nullptr;

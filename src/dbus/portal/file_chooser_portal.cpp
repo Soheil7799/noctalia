@@ -158,8 +158,14 @@ namespace {
     std::string uri = "file://";
     uri.reserve(uri.size() + text.size());
     for (const unsigned char c : text) {
-      const bool unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'
-                              || c == '_' || c == '.' || c == '~' || c == '/';
+      const bool unreserved = (c >= 'A' && c <= 'Z')
+          || (c >= 'a' && c <= 'z')
+          || (c >= '0' && c <= '9')
+          || c == '-'
+          || c == '_'
+          || c == '.'
+          || c == '~'
+          || c == '/';
       if (unreserved) {
         uri.push_back(static_cast<char>(c));
       } else {
@@ -208,12 +214,14 @@ struct FileChooserPortal::Impl {
   void exportRequest(const sdbus::ObjectPath& handle) {
     try {
       request = sdbus::createObject(bus.connection(), handle);
-      request->addVTable(sdbus::registerMethod("Close").implementedAs([this]() {
-        // The app gave up on us: drop the dialog and answer the pending call so
-        // the frontend is not left waiting.
-        FileDialog::cancelIfPending();
-        finish(kResponseCancelled, {});
-      })).forInterface(kRequestInterface);
+      request
+          ->addVTable(sdbus::registerMethod("Close").implementedAs([this]() {
+            // The app gave up on us: drop the dialog and answer the pending call so
+            // the frontend is not left waiting.
+            FileDialog::cancelIfPending();
+            finish(kResponseCancelled, {});
+          }))
+          .forInterface(kRequestInterface);
     } catch (const sdbus::Error& e) {
       // Not fatal: without it, Close() from the app is ignored and the dialog
       // stays until the user answers it.
@@ -224,10 +232,9 @@ struct FileChooserPortal::Impl {
 
   /// Shared by all three methods: they differ only in how the options map onto
   /// FileDialogOptions and how the chosen path becomes the result URIs.
-  void run(
-      CallResult&& result, const sdbus::ObjectPath& handle, FileDialogOptions options,
-      std::function<std::vector<std::string>(const std::filesystem::path&)> toUris, bool multiple = false
-  ) {
+  void
+  run(CallResult&& result, const sdbus::ObjectPath& handle, FileDialogOptions options,
+      std::function<std::vector<std::string>(const std::filesystem::path&)> toUris, bool multiple = false) {
     if (busy()) {
       kLog.warn("file chooser: a dialog is already open; refusing concurrent request");
       result.returnResults(kResponseError, Vardict{});
@@ -246,9 +253,8 @@ struct FileChooserPortal::Impl {
     DeferredCall::callLater([this, options = std::move(options), toUris = std::move(toUris), multiple]() mutable {
       bool opened = false;
       if (multiple) {
-        opened = FileDialog::openMultiple(
-            std::move(options),
-            [this, toUris](std::vector<std::filesystem::path> picked) {
+        opened =
+            FileDialog::openMultiple(std::move(options), [this, toUris](std::vector<std::filesystem::path> picked) {
               if (picked.empty()) {
                 finish(kResponseCancelled, {});
                 return;
@@ -262,8 +268,7 @@ struct FileChooserPortal::Impl {
                 }
               }
               finish(kResponseSuccess, std::move(uris));
-            }
-        );
+            });
       } else {
         opened = FileDialog::open(std::move(options), [this, toUris](std::optional<std::filesystem::path> picked) {
           if (!picked.has_value()) {
@@ -307,9 +312,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 const bool multiple = optionOf<bool>(options, "multiple").value_or(false);
                 impl->run(
                     std::move(result), handle, std::move(dialog),
-                    [](const std::filesystem::path& picked) {
-                      return std::vector<std::string>{toFileUri(picked)};
-                    },
+                    [](const std::filesystem::path& picked) { return std::vector<std::string>{toFileUri(picked)}; },
                     // A folder pick is one path by definition, so `multiple`
                     // only means anything for files.
                     multiple && !directory
@@ -388,8 +391,9 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
       )
       .forInterface(kInterface);
 
-  auto proxy = sdbus::createProxy(bus.connection(), sdbus::ServiceName{"org.freedesktop.DBus"},
-                                  sdbus::ObjectPath{"/org/freedesktop/DBus"});
+  auto proxy = sdbus::createProxy(
+      bus.connection(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"}
+  );
   std::uint32_t reply = 0;
   proxy->callMethod("RequestName")
       .onInterface("org.freedesktop.DBus")

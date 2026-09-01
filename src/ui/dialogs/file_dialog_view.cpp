@@ -2,9 +2,9 @@
 
 #include "core/deferred_call.h"
 #include "core/input/key_modifiers.h"
-#include "core/log.h"
 #include "core/input/key_symbols.h"
 #include "core/input/keybind_matcher.h"
+#include "core/log.h"
 #include "i18n/i18n.h"
 #include "render/core/renderer.h"
 #include "render/core/thumbnail_service.h"
@@ -31,7 +31,6 @@
 namespace {
   constexpr Logger kLog("filedialog");
 
-
   constexpr std::size_t kListRowOverscan = 3;
   constexpr std::size_t kGridRowOverscan = 1;
   constexpr float kGridMinCellWidth = 140.0F;
@@ -56,8 +55,9 @@ public:
   /// The grid offers this hook for overlays that want a press before the normal
   /// activation. Returning true stops the click from also becoming a selection,
   /// so ticking a box never doubles as "pick only this one".
-  bool onPointerPress(std::size_t index, float cellLocalX, float /*cellLocalY*/, float /*cellWidth*/,
-                      float /*cellHeight*/) override {
+  bool onPointerPress(
+      std::size_t index, float cellLocalX, float /*cellLocalY*/, float /*cellWidth*/, float /*cellHeight*/
+  ) override {
     if (!m_multiSelect || !m_multiSelect() || !m_onToggle) {
       return false;
     }

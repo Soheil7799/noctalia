@@ -2,9 +2,7 @@
 
 #include "ui/dialogs/file_dialog.h"
 
-namespace {
-}
-
+namespace {}
 
 #include "core/log.h"
 #include "render/render_context.h"
