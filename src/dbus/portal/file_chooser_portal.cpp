@@ -2,6 +2,7 @@
 
 #include "core/deferred_call.h"
 #include "core/log.h"
+#include "dbus/portal/file_chooser_util.h"
 #include "dbus/session_bus.h"
 #include "ui/dialogs/file_dialog.h"
 
@@ -67,114 +68,24 @@ namespace {
     return std::filesystem::path{text};
   }
 
-  /// A glob reduced to the ".ext" form DirectoryScanner expects, or nullopt
-  /// when it cannot be expressed as one.
-  ///
-  /// Real-world filters are not literal: browsers spell case-insensitivity as
-  /// character classes, so Brave asks for `*.[pP][nN][gG]` rather than `*.png`.
-  /// Treating that as literal text yields ".[pp][nn][gg]", which matches no file
-  /// on earth -- the dialog then opens on a directory of images and reports that
-  /// none of them match.
-  std::optional<std::string> extensionFromGlob(std::string_view glob) {
-    if (!glob.starts_with("*.")) {
-      return std::nullopt;
-    }
-    const std::string_view rest = glob.substr(2);
-    if (rest.empty()) {
-      return std::nullopt;
-    }
-
-    std::string ext = ".";
-    for (std::size_t i = 0; i < rest.size();) {
-      const char c = rest[i];
-      if (c == '*' || c == '?') {
-        return std::nullopt; // still a wildcard: not a fixed extension
-      }
-      if (c == '[') {
-        const std::size_t close = rest.find(']', i + 1);
-        if (close == std::string_view::npos) {
-          return std::nullopt;
-        }
-        const std::string_view cls = rest.substr(i + 1, close - i - 1);
-        if (cls.empty()) {
-          return std::nullopt;
-        }
-        // Only a case-variant class collapses to one character. Anything else
-        // ([0-9], [abc]) is a genuine alternation this cannot represent.
-        const char first = static_cast<char>(std::tolower(static_cast<unsigned char>(cls.front())));
-        for (const char member : cls) {
-          if (static_cast<char>(std::tolower(static_cast<unsigned char>(member))) != first) {
-            return std::nullopt;
-          }
-        }
-        ext.push_back(first);
-        i = close + 1;
-        continue;
-      }
-      ext.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-      ++i;
-    }
-    return ext;
-  }
-
-  /// Portal filters -> FileDialogOptions::extensions.
-  ///
-  /// The dialog has no filter dropdown, so every filter's patterns are merged.
-  /// That makes a catch-all decisive: browsers send an "All Files" entry of
-  /// `*.*` alongside the specific types, and if the user is offered "all files"
-  /// at all, filtering to a subset would hide files they are entitled to pick.
-  /// So one catch-all disables filtering entirely.
+  /// Portal filters -> FileDialogOptions::extensions. Unpacks the wire format;
+  /// the reduction itself lives in file_chooser_util so it can be tested.
   std::vector<std::string> extensionsFromFilters(const Vardict& options) {
-    std::vector<std::string> extensions;
     const auto filters = optionOf<std::vector<Filter>>(options, "filters");
     if (!filters.has_value()) {
-      return extensions;
+      return {};
     }
 
+    std::vector<std::string> globs;
     for (const auto& filter : *filters) {
       for (const auto& pattern : filter.get<1>()) {
         if (pattern.get<0>() != 0U) {
           continue; // mime type: nothing to match on a filename
         }
-        const std::string& glob = pattern.get<1>();
-        if (glob == "*" || glob == "*.*") {
-          return {}; // catch-all present: show everything
-        }
-        if (auto ext = extensionFromGlob(glob)) {
-          if (std::ranges::find(extensions, *ext) == extensions.end()) {
-            extensions.push_back(std::move(*ext));
-          }
-        }
+        globs.push_back(pattern.get<1>());
       }
     }
-    return extensions;
-  }
-
-  /// Backends must hand back normalized file:// URIs. Percent-encode everything
-  /// outside RFC 3986 unreserved, keeping '/' so the path stays a path.
-  std::string toFileUri(const std::filesystem::path& path) {
-    static constexpr std::string_view kHex = "0123456789ABCDEF";
-    const std::string text = path.string();
-    std::string uri = "file://";
-    uri.reserve(uri.size() + text.size());
-    for (const unsigned char c : text) {
-      const bool unreserved = (c >= 'A' && c <= 'Z')
-          || (c >= 'a' && c <= 'z')
-          || (c >= '0' && c <= '9')
-          || c == '-'
-          || c == '_'
-          || c == '.'
-          || c == '~'
-          || c == '/';
-      if (unreserved) {
-        uri.push_back(static_cast<char>(c));
-      } else {
-        uri.push_back('%');
-        uri.push_back(kHex[c >> 4U]);
-        uri.push_back(kHex[c & 0x0FU]);
-      }
-    }
-    return uri;
+    return file_chooser_util::extensionsFromGlobs(globs);
   }
 
 } // namespace
@@ -303,6 +214,9 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 const bool directory = optionOf<bool>(options, "directory").value_or(false);
                 dialog.mode = directory ? FileDialogMode::SelectFolder : FileDialogMode::Open;
                 dialog.title = std::move(title);
+                if (auto label = optionOf<std::string>(options, "accept_label")) {
+                  dialog.acceptLabel = file_chooser_util::stripMnemonics(*label);
+                }
                 if (!directory) {
                   dialog.extensions = extensionsFromFilters(options);
                 }
@@ -312,7 +226,9 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 const bool multiple = optionOf<bool>(options, "multiple").value_or(false);
                 impl->run(
                     std::move(result), handle, std::move(dialog),
-                    [](const std::filesystem::path& picked) { return std::vector<std::string>{toFileUri(picked)}; },
+                    [](const std::filesystem::path& picked) {
+                      return std::vector<std::string>{file_chooser_util::toFileUri(picked)};
+                    },
                     // A folder pick is one path by definition, so `multiple`
                     // only means anything for files.
                     multiple && !directory
@@ -326,6 +242,9 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 FileDialogOptions dialog;
                 dialog.mode = FileDialogMode::Save;
                 dialog.title = std::move(title);
+                if (auto label = optionOf<std::string>(options, "accept_label")) {
+                  dialog.acceptLabel = file_chooser_util::stripMnemonics(*label);
+                }
                 dialog.extensions = extensionsFromFilters(options);
                 if (auto name = optionOf<std::string>(options, "current_name")) {
                   dialog.defaultFilename = std::move(*name);
@@ -341,7 +260,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                   dialog.defaultFilename = file->filename().string();
                 }
                 impl->run(std::move(result), handle, std::move(dialog), [](const std::filesystem::path& picked) {
-                  return std::vector<std::string>{toFileUri(picked)};
+                  return std::vector<std::string>{file_chooser_util::toFileUri(picked)};
                 });
               }),
           sdbus::registerMethod("SaveFiles")
@@ -354,6 +273,9 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 FileDialogOptions dialog;
                 dialog.mode = FileDialogMode::SelectFolder;
                 dialog.title = std::move(title);
+                if (auto label = optionOf<std::string>(options, "accept_label")) {
+                  dialog.acceptLabel = file_chooser_util::stripMnemonics(*label);
+                }
                 if (auto folder = pathFromBytes(options, "current_folder")) {
                   dialog.startDirectory = std::move(*folder);
                 }
@@ -382,7 +304,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                       std::vector<std::string> uris;
                       uris.reserve(names.size());
                       for (const auto& name : names) {
-                        uris.push_back(toFileUri(folder / name));
+                        uris.push_back(file_chooser_util::toFileUri(folder / name));
                       }
                       return uris;
                     }

@@ -25,6 +25,9 @@ struct FileDialogOptions {
   std::vector<std::string> extensions;
   std::string defaultFilename;
   std::string title;
+  /// Overrides the confirm button's text when the caller asked for specific
+  /// wording ("Upload", "Select"). Empty keeps the label implied by the mode.
+  std::string acceptLabel;
   bool showHiddenFiles = false;
   /// Open mode only. Save picks one name and SelectFolder one directory, so
   /// neither has a meaning for a set.
