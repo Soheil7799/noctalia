@@ -71,6 +71,13 @@ FileEntryTile::FileEntryTile(float scale, ThumbnailService* thumbnails) : m_scal
   });
   m_label = static_cast<Label*>(addChild(std::move(label)));
 
+  // Added last: it overlays the preview, so it has to draw after it.
+  auto check = ui::glyph({
+      .glyphSize = Style::fontSizeBody * scale,
+  });
+  m_check = static_cast<Glyph*>(addChild(std::move(check)));
+  m_check->setVisible(false);
+
   setVisible(false);
 }
 
@@ -174,6 +181,11 @@ void FileEntryTile::doLayout(Renderer& renderer) {
   m_image->setPosition(previewX + imageInset, previewY + imageInset);
   m_image->setSize(std::max(0.0F, previewWidth - imageInset * 2.0F), std::max(0.0F, previewHeight - imageInset * 2.0F));
 
+  if (m_check != nullptr && m_check->visible()) {
+    m_check->measure(renderer);
+    m_check->setPosition(std::round(previewX + imageInset), std::round(previewY + imageInset));
+  }
+
   if (m_glyph->visible()) {
     m_glyph->measure(renderer);
     m_glyph->setPosition(
@@ -189,6 +201,22 @@ void FileEntryTile::doLayout(Renderer& renderer) {
   InputArea::doLayout(renderer);
 }
 
+void FileEntryTile::setMultiSelect(bool enabled) {
+  if (m_multiSelect == enabled) {
+    return;
+  }
+  m_multiSelect = enabled;
+  if (m_check != nullptr) {
+    m_check->setVisible(enabled);
+  }
+  applyVisualState();
+}
+
+float FileEntryTile::checkboxZoneSize(float scale) {
+  // The glyph plus the inset it sits in, so the corner is comfortably clickable.
+  return (kPreviewInset * scale) + (Style::fontSizeBody * scale);
+}
+
 void FileEntryTile::applyVisualState() {
   const Color bg = m_selected ? colorForRole(ColorRole::Primary)
       : m_hovered             ? colorForRole(ColorRole::Hover)
@@ -200,6 +228,12 @@ void FileEntryTile::applyVisualState() {
   const float alpha = m_disabled ? 0.55F : 1.0F;
 
   m_background->setFill(bg);
+  if (m_check != nullptr && m_multiSelect) {
+    // Same Tabler names as the list row, and the label's colour rather than the
+    // glyph's: the box sits over the preview but reads as part of the selection.
+    m_check->setGlyph(m_selected ? "checkbox" : "square");
+    m_check->setColor(withAlpha(labelFg, alpha));
+  }
   m_glyph->setColor(withAlpha(glyphFg, alpha));
   m_label->setColor(withAlpha(labelFg, alpha));
   markLayoutDirty();

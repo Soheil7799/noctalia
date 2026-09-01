@@ -32,6 +32,13 @@ public:
   void refreshThumbnail(Renderer& renderer);
   void clear(Renderer& renderer);
   void setVisualState(bool selected, bool hovered, bool disabled);
+  /// Show the tick box. The grid's rows have one too; without it, multi-selection
+  /// in grid view would be reachable only by Ctrl/Shift, which is not discoverable.
+  void setMultiSelect(bool enabled);
+  /// Side of the square hit zone in the tile's top-left corner, measured from the
+  /// tile origin. VirtualGridAdapter::onPointerPress needs it to route a press to
+  /// the box rather than to selection.
+  [[nodiscard]] static float checkboxZoneSize(float scale);
 
 private:
   void doLayout(Renderer& renderer) override;
@@ -49,6 +56,8 @@ private:
   Box* m_preview = nullptr;
   Image* m_image = nullptr;
   Glyph* m_glyph = nullptr;
+  Glyph* m_check = nullptr;
+  bool m_multiSelect = false;
   Label* m_label = nullptr;
   std::string m_thumbnailPath;
   IndexCallback m_onClick;

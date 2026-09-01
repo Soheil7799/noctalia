@@ -112,11 +112,29 @@ public:
   /// Multi-selection therefore cannot come from the grid: the view supplies the
   /// predicate and the adapter paints from that instead.
   void setIsSelectedFn(std::function<bool(std::size_t)> fn) { m_isSelected = std::move(fn); }
+  void setMultiSelectFn(std::function<bool()> fn) { m_multiSelect = std::move(fn); }
+  void setOnToggleFn(std::function<void(std::size_t)> fn) { m_onToggle = std::move(fn); }
 
   [[nodiscard]] std::size_t itemCount() const override { return m_entries == nullptr ? 0 : m_entries->size(); }
 
   [[nodiscard]] std::unique_ptr<Node> createTile() override {
     return std::make_unique<FileEntryTile>(m_scale, m_thumbnails);
+  }
+
+  /// The tick box occupies the tile's top-left corner, so a press there toggles
+  /// instead of selecting. Returning true consumes the click.
+  bool onPointerPress(
+      std::size_t index, float cellLocalX, float cellLocalY, float /*cellWidth*/, float /*cellHeight*/
+  ) override {
+    if (!m_multiSelect || !m_multiSelect() || !m_onToggle) {
+      return false;
+    }
+    const float zone = FileEntryTile::checkboxZoneSize(m_scale);
+    if (cellLocalX > zone || cellLocalY > zone) {
+      return false;
+    }
+    m_onToggle(index);
+    return true;
   }
 
   void bindTile(Node& tile, std::size_t index, bool selected, bool hovered) override {
@@ -129,6 +147,8 @@ public:
     // so per-frame rebinds that VirtualGridView's row-modulo recycling already filters
     // out remain free of thumbnail churn.
     const bool isSel = m_isSelected ? m_isSelected(index) : selected;
+    // Before bind: the box's visibility feeds the visual state bind() applies.
+    file->setMultiSelect(static_cast<bool>(m_multiSelect) && m_multiSelect());
     file->bind(
         *m_renderer, (*m_entries)[index], index, file->width(), file->height(), isSel, hovered && !isSel, disabled
     );
@@ -148,6 +168,8 @@ private:
   std::function<bool(std::size_t)> m_isSelectable;
   std::function<bool(std::size_t)> m_isSelected;
   std::function<void(std::size_t)> m_onActivate;
+  std::function<bool()> m_multiSelect;
+  std::function<void(std::size_t)> m_onToggle;
 };
 
 FileDialogView::FileDialogView(ThumbnailService* thumbnails) : m_thumbnails(thumbnails) {}
@@ -428,6 +450,8 @@ void FileDialogView::create() {
   m_gridAdapter->setEntries(&m_visibleEntries);
   m_gridAdapter->setSelectableFn([this](std::size_t idx) { return isSelectableIndex(idx); });
   m_gridAdapter->setIsSelectedFn([this](std::size_t idx) { return isIndexSelected(idx); });
+  m_gridAdapter->setMultiSelectFn([this]() { return multiEnabled(); });
+  m_gridAdapter->setOnToggleFn([this](std::size_t idx) { toggleIndex(idx); });
   m_gridAdapter->setOnActivate([this](std::size_t idx) {
     const std::weak_ptr<void> aliveGuard = m_aliveGuard;
     DeferredCall::callLater([this, aliveGuard, idx]() {
@@ -936,6 +960,12 @@ void FileDialogView::updateControls() {
   case FileDialogMode::SelectFolder:
     okText = i18n::tr("ui.dialogs.file.actions.select-folder");
     break;
+  }
+
+  // A caller that named the action ("Upload") knows its own flow better than the
+  // mode does, so its wording wins.
+  if (!m_options.acceptLabel.empty()) {
+    okText = m_options.acceptLabel;
   }
 
   if (m_okButton != nullptr) {
