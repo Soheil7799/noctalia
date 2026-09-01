@@ -118,8 +118,6 @@ void FileDialogPopup::accept(std::optional<std::filesystem::path> result) {
   FileDialog::complete(std::move(result));
 }
 
-bool FileDialogPopup::wantsParentKeyboardGrab() const { return FileDialog::currentOptions().grabKeyboard; }
-
 std::uint32_t FileDialogPopup::currentModifiers() const {
   const auto* connection = wayland();
   const std::uint32_t mods = connection != nullptr ? connection->keyboardModifiers() : 0U;

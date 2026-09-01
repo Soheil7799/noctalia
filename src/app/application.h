@@ -102,6 +102,7 @@ namespace sdbus {
   class IProxy;
 }
 
+class FileDialogPanel;
 class LauncherPanel;
 class AccountsService;
 class BluetoothAgent;
@@ -319,6 +320,7 @@ private:
   LockscreenWidgetsController m_lockscreenWidgetsController;
   SessionActionRunner m_sessionActionRunner{m_compositorPlatform, m_lockScreen};
   PanelManager m_panelManager;
+  FileDialogPanel* m_fileDialogPanel = nullptr;
   // Owned by m_panelManager; kept raw so plugin launcher providers can be re-applied.
   LauncherPanel* m_launcherPanel = nullptr;
   // Ids of plugin-backed panels currently registered with m_panelManager, so a

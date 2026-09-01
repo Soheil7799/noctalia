@@ -172,11 +172,6 @@ protected:
   [[nodiscard]] virtual bool preDispatchKeyboard(const KeyboardEvent& /*event*/) { return false; }
   virtual void onSheetClose() {}
 
-  /// Raise the parent layer surface to OnDemand keyboard interactivity while
-  /// this popup is up, restoring None when it closes. Opt-in: a popup parented
-  /// to a panel already inherits keyboard, and raising would downgrade an
-  /// Exclusive parent and then clear it on restore.
-  [[nodiscard]] virtual bool wantsParentKeyboardGrab() const { return false; }
 
   // Owned shared state. Subclasses don't manipulate these directly outside
   // of the `populateContent` / `layoutSheet` hooks where appropriate.
@@ -195,10 +190,6 @@ protected:
   InputDispatcher m_inputDispatcher;
   bool m_attachedToHost = false;
   wl_surface* m_parentSurface = nullptr;
-  zwlr_layer_surface_v1* m_grabbedKeyboardLayerSurface = nullptr;
-  wl_surface* m_grabbedKeyboardWlSurface = nullptr;
-
-  void restoreParentKeyboard();
   bool m_pointerInside = false;
   bool m_openInProgress = false;
   bool m_closeRequestedDuringOpen = false;

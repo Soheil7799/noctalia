@@ -234,10 +234,9 @@ struct FileChooserPortal::Impl {
       return;
     }
 
-    // No panel is open on this path, so the dialog's parent resolves to the bar,
-    // whose keyboard interactivity is None -- and a layer-shell popup inherits
-    // it. Without this the dialog cannot be typed into and reads modifiers as 0.
-    options.grabKeyboard = true;
+    // No panel is open on this path, so the dialog gets its own layer surface
+    // rather than borrowing the keyboard of whatever happened to be touched last.
+    options.standalone = true;
 
     pending.emplace(std::move(result));
     exportRequest(handle);

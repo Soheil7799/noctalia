@@ -29,15 +29,16 @@ struct FileDialogOptions {
   /// Open mode only. Save picks one name and SelectFolder one directory, so
   /// neither has a meaning for a set.
   bool allowMultiple = false;
-  /// Take keyboard focus for the dialog's parent surface while it is up.
+  /// Host the dialog on its own layer surface instead of as a popup attached to
+  /// the surface that raised it.
   ///
-  /// Layer-shell popups inherit their parent's keyboard interactivity. Opened
-  /// from Settings the parent is a panel that already holds keyboard, so the
-  /// dialog types and Ctrl/Shift work. Opened from the portal there is no panel:
-  /// the parent resolves to whatever was last touched (the bar, which is None),
-  /// and the dialog receives no wl_keyboard events at all -- no typing, no
-  /// Escape, and modifiers frozen at 0. Only that path sets this.
-  bool grabKeyboard = false;
+  /// The settings modal is a popup parented to the settings panel, which already
+  /// holds the keyboard, so it types and reads modifiers correctly. The portal
+  /// has no panel to attach to: its parent resolves to whatever was last touched,
+  /// normally the bar, whose keyboard interactivity is None -- and a layer-shell
+  /// popup inherits its parent's. That dialog could not be typed into and read
+  /// every modifier as 0. A standalone surface owns its keyboard outright.
+  bool standalone = false;
 
   FileDialogOptions& withHiddenFiles(bool show = true) {
     showHiddenFiles = show;

@@ -651,6 +651,7 @@ _noctalia_sources = files(
   'src/ui/dialogs/color_picker_dialog_popup.cpp',
   'src/ui/dialogs/dialog_popup_host.cpp',
   'src/ui/dialogs/file_dialog.cpp',
+  'src/ui/dialogs/file_dialog_panel.cpp',
   'src/ui/dialogs/file_dialog_popup.cpp',
   'src/ui/dialogs/file_dialog_view.cpp',
   'src/ui/dialogs/file_entry_row.cpp',
