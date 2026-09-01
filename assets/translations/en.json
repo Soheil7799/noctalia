@@ -4090,6 +4090,10 @@
           "open": "Open File",
           "save": "Save File",
           "select-folder": "Select Folder"
+        },
+        "overwrite": {
+          "message": "{name} already exists. Replace it?",
+          "replace": "Replace"
         }
       },
       "glyph-picker": {

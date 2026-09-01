@@ -493,6 +493,7 @@ void FileDialogView::create() {
   root->addChild(
       ui::row(
           {
+              .out = &m_bottomRow,
               .align = FlexAlign::Center,
               .gap = Style::spaceSm * scale,
           },
@@ -558,6 +559,60 @@ void FileDialogView::create() {
           })
       )
   );
+
+  // Replace prompt. Swapped in for the footer rather than layered over the
+  // dialog: the question is about the action the footer was about to take, and
+  // an inline row needs no second surface -- so it behaves identically whether
+  // the dialog is hosted as a panel or as the settings modal.
+  root->addChild(
+      ui::row(
+          {
+              .out = &m_overwriteRow,
+              .align = FlexAlign::Center,
+              .gap = Style::spaceSm * scale,
+              .visible = false,
+              .participatesInLayout = false,
+          },
+          ui::label({
+              .out = &m_overwriteLabel,
+              .fontSize = Style::fontSizeBody * scale,
+              .maxLines = 2,
+              .flexGrow = 1.0F,
+          }),
+          ui::button({
+              .text = i18n::tr("common.actions.cancel"),
+              .minWidth = 92.0F * scale,
+              .minHeight = Style::controlHeight * scale,
+              .paddingV = Style::spaceSm * scale,
+              .paddingH = Style::spaceMd * scale,
+              .radius = Style::scaledRadiusMd(scale),
+              .onClick = [this]() { cancelOverwriteConfirm(); },
+          }),
+          ui::button({
+              .text = i18n::tr("ui.dialogs.file.overwrite.replace"),
+              .variant = ButtonVariant::Primary,
+              .minWidth = 92.0F * scale,
+              .minHeight = Style::controlHeight * scale,
+              .paddingV = Style::spaceSm * scale,
+              .paddingH = Style::spaceMd * scale,
+              .radius = Style::scaledRadiusMd(scale),
+              .onClick = [this]() {
+                const std::weak_ptr<void> aliveGuard = m_aliveGuard;
+                DeferredCall::callLater([this, aliveGuard]() {
+                  if (aliveGuard.expired()) {
+                    return;
+                  }
+                  auto target = m_pendingOverwrite;
+                  if (target.empty()) {
+                    return;
+                  }
+                  m_pendingOverwrite.clear();
+                  acceptDialog(std::move(target));
+                });
+              },
+          })
+      )
+  );
   setRoot(std::move(root));
 
   if (m_animations != nullptr && this->root() != nullptr) {
@@ -583,6 +638,8 @@ void FileDialogView::onOpen(std::string_view /*context*/) {
   m_selectedIndex = static_cast<std::size_t>(-1);
   m_thumbnailRefreshPending = false;
   m_currentFilter = m_options.currentFilter < m_options.filters.size() ? m_options.currentFilter : 0;
+  m_pendingOverwrite.clear();
+  setFooterMode(false);
 
   if (m_filterSelect != nullptr) {
     const bool hasFilters = !m_options.filters.empty();
@@ -720,6 +777,13 @@ bool FileDialogView::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers,
 
   if ((modifiers & KeyMod::Ctrl) != 0 && (sym == XKB_KEY_l || sym == XKB_KEY_L)) {
     focusSearch();
+    return true;
+  }
+
+  // While the prompt is up it owns Escape: closing the whole dialog would throw
+  // away a filename the user just typed.
+  if (confirmingOverwrite() && sym == XKB_KEY_Escape) {
+    cancelOverwriteConfirm();
     return true;
   }
 
@@ -1268,7 +1332,22 @@ void FileDialogView::submitDialog() {
     if (m_filenameInput == nullptr || m_filenameInput->value().empty()) {
       return;
     }
-    acceptDialog(m_currentDirectory / m_filenameInput->value());
+    const std::string filename = filenameWithFilterExtension(m_filenameInput->value());
+    // Reflected back into the field so the replace prompt below, and the dialog
+    // the user is looking at, name the file that will actually be written.
+    if (filename != m_filenameInput->value()) {
+      m_filenameInput->setValue(filename);
+    }
+    std::filesystem::path target = m_currentDirectory / filename;
+    // The caller writes the path we hand back without asking again, so a silent
+    // return here is a destroyed file. Directories are not a replace candidate:
+    // saving over one cannot work, and updateControls already refuses it.
+    std::error_code ec;
+    if (std::filesystem::exists(target, ec) && !ec && !std::filesystem::is_directory(target, ec)) {
+      beginOverwriteConfirm(std::move(target));
+      return;
+    }
+    acceptDialog(std::move(target));
     return;
   }
 
@@ -1409,6 +1488,52 @@ const std::vector<std::string>& FileDialogView::activeExtensions() const {
     return m_options.filters[m_currentFilter].extensions;
   }
   return m_options.extensions;
+}
+
+std::string FileDialogView::filenameWithFilterExtension(std::string name) const {
+  const auto& extensions = activeExtensions();
+  if (name.empty() || extensions.empty()) {
+    return name;
+  }
+  // Only when the user gave none. Replacing an extension they typed would fight
+  // them -- saving "notes.md" under a filter offering ".txt" is a choice, not a
+  // mistake -- and appending unconditionally turns "archive.tar.gz" into
+  // "archive.tar.gz.gz".
+  if (std::filesystem::path(name).has_extension()) {
+    return name;
+  }
+  return name + extensions.front();
+}
+
+void FileDialogView::beginOverwriteConfirm(std::filesystem::path target) {
+  m_pendingOverwrite = std::move(target);
+  if (m_overwriteLabel != nullptr) {
+    m_overwriteLabel->setText(
+        i18n::tr("ui.dialogs.file.overwrite.message", "name", m_pendingOverwrite.filename().string())
+    );
+  }
+  setFooterMode(true);
+}
+
+void FileDialogView::cancelOverwriteConfirm() {
+  if (m_pendingOverwrite.empty()) {
+    return;
+  }
+  m_pendingOverwrite.clear();
+  setFooterMode(false);
+}
+
+void FileDialogView::setFooterMode(bool confirming) {
+  if (m_bottomRow != nullptr) {
+    m_bottomRow->setVisible(!confirming);
+    m_bottomRow->setParticipatesInLayout(!confirming);
+  }
+  if (m_overwriteRow != nullptr) {
+    m_overwriteRow->setVisible(confirming);
+    m_overwriteRow->setParticipatesInLayout(confirming);
+  }
+  requestLayout();
+  requestRedraw();
 }
 
 void FileDialogView::applyFilterIndex(std::size_t index) {

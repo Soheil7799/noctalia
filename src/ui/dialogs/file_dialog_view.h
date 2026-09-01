@@ -113,6 +113,14 @@ private:
   /// The extension list the current filter selection implies.
   [[nodiscard]] const std::vector<std::string>& activeExtensions() const;
   void applyFilterIndex(std::size_t index);
+  /// Save-mode guard: hold the request until the user agrees to replace.
+  void beginOverwriteConfirm(std::filesystem::path target);
+  void cancelOverwriteConfirm();
+  void setFooterMode(bool confirming);
+  /// The typed name with the selected filter's extension applied, when the name
+  /// carries none of its own.
+  [[nodiscard]] std::string filenameWithFilterExtension(std::string name) const;
+  [[nodiscard]] bool confirmingOverwrite() const noexcept { return !m_pendingOverwrite.empty(); }
   [[nodiscard]] bool isIndexSelected(std::size_t index) const;
   void toggleIndex(std::size_t index);
   /// Shift+click: select the run between the cursor and `index`.
@@ -157,6 +165,11 @@ private:
   Button* m_sizeSortButton = nullptr;
   Button* m_dateSortButton = nullptr;
   Select* m_filterSelect = nullptr;
+  Flex* m_bottomRow = nullptr;
+  Flex* m_overwriteRow = nullptr;
+  Label* m_overwriteLabel = nullptr;
+  /// Non-empty only while the replace prompt is up; it is also the flag.
+  std::filesystem::path m_pendingOverwrite;
   VirtualGridView* m_listGrid = nullptr;
   Label* m_listEmptyLabel = nullptr;
   Flex* m_gridContainer = nullptr;
