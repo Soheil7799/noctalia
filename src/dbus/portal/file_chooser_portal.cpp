@@ -253,7 +253,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
       ->addVTable(
           sdbus::registerMethod("OpenFile")
               .implementedAs([impl](
-                                 CallResult&& result, sdbus::ObjectPath handle, std::string /*appId*/,
+                                 CallResult&& result, sdbus::ObjectPath handle, std::string appId,
                                  std::string /*parentWindow*/, std::string title, Vardict options
                              ) {
                 FileDialogOptions dialog;
@@ -269,6 +269,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                   dialog.extensions = extensionsFromFilters(options);
                   dialog.filters = filtersFromOptions(options);
                   dialog.currentFilter = currentFilterIndex(options, dialog.filters);
+                  dialog.rememberKey = file_chooser_util::stateKeyForApp(appId);
                 }
                 if (auto folder = pathFromBytes(options, "current_folder")) {
                   dialog.startDirectory = std::move(*folder);
@@ -286,7 +287,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
               }),
           sdbus::registerMethod("SaveFile")
               .implementedAs([impl](
-                                 CallResult&& result, sdbus::ObjectPath handle, std::string /*appId*/,
+                                 CallResult&& result, sdbus::ObjectPath handle, std::string appId,
                                  std::string /*parentWindow*/, std::string title, Vardict options
                              ) {
                 FileDialogOptions dialog;
@@ -298,6 +299,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 dialog.extensions = extensionsFromFilters(options);
                 dialog.filters = filtersFromOptions(options);
                 dialog.currentFilter = currentFilterIndex(options, dialog.filters);
+                dialog.rememberKey = file_chooser_util::stateKeyForApp(appId);
                 if (auto name = optionOf<std::string>(options, "current_name")) {
                   dialog.defaultFilename = std::move(*name);
                 }
@@ -317,7 +319,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
               }),
           sdbus::registerMethod("SaveFiles")
               .implementedAs([impl](
-                                 CallResult&& result, sdbus::ObjectPath handle, std::string /*appId*/,
+                                 CallResult&& result, sdbus::ObjectPath handle, std::string appId,
                                  std::string /*parentWindow*/, std::string title, Vardict options
                              ) {
                 // SaveFiles asks where to put a set of files the app already
@@ -325,6 +327,7 @@ FileChooserPortal::FileChooserPortal(SessionBus& bus) : m_impl(std::make_unique<
                 FileDialogOptions dialog;
                 dialog.mode = FileDialogMode::SelectFolder;
                 dialog.title = std::move(title);
+                dialog.rememberKey = file_chooser_util::stateKeyForApp(appId);
                 if (auto label = optionOf<std::string>(options, "accept_label")) {
                   dialog.acceptLabel = file_chooser_util::stripMnemonics(*label);
                 }

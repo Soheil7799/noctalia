@@ -613,6 +613,63 @@ void FileDialogView::create() {
           })
       )
   );
+
+  // New-folder prompt, sharing the footer with the replace prompt: both are the
+  // same shape of question -- one line of input or confirmation standing in for
+  // the normal actions -- so they cost one row each and no extra surface.
+  root->addChild(
+      ui::row(
+          {
+              .out = &m_newFolderRow,
+              .align = FlexAlign::Center,
+              .gap = Style::spaceSm * scale,
+              .visible = false,
+              .participatesInLayout = false,
+          },
+          ui::input({
+              .out = &m_newFolderInput,
+              .placeholder = i18n::tr("ui.dialogs.file.new-folder.placeholder"),
+              .fontSize = Style::fontSizeBody * scale,
+              .controlHeight = Style::controlHeight * scale,
+              .horizontalPadding = Style::spaceMd * scale,
+              .flexGrow = 1.0F,
+              .onSubmit = [this](const std::string&) { commitNewFolder(); },
+          }),
+          ui::label({
+              .out = &m_newFolderError,
+              .fontSize = Style::fontSizeCaption * scale,
+              .maxLines = 1,
+              .visible = false,
+          }),
+          ui::button({
+              .text = i18n::tr("common.actions.cancel"),
+              .minWidth = 92.0F * scale,
+              .minHeight = Style::controlHeight * scale,
+              .paddingV = Style::spaceSm * scale,
+              .paddingH = Style::spaceMd * scale,
+              .radius = Style::scaledRadiusMd(scale),
+              .onClick = [this]() { cancelNewFolder(); },
+          }),
+          ui::button({
+              .text = i18n::tr("ui.dialogs.file.new-folder.create"),
+              .variant = ButtonVariant::Primary,
+              .minWidth = 92.0F * scale,
+              .minHeight = Style::controlHeight * scale,
+              .paddingV = Style::spaceSm * scale,
+              .paddingH = Style::spaceMd * scale,
+              .radius = Style::scaledRadiusMd(scale),
+              .onClick = [this]() {
+                const std::weak_ptr<void> aliveGuard = m_aliveGuard;
+                DeferredCall::callLater([this, aliveGuard]() {
+                  if (aliveGuard.expired()) {
+                    return;
+                  }
+                  commitNewFolder();
+                });
+              },
+          })
+      )
+  );
   setRoot(std::move(root));
 
   if (m_animations != nullptr && this->root() != nullptr) {
@@ -629,7 +686,15 @@ void FileDialogView::create() {
 
 void FileDialogView::onOpen(std::string_view /*context*/) {
   m_options = FileDialog::currentOptions();
-  m_currentDirectory = resolveStartDirectory(m_options.startDirectory);
+  std::filesystem::path start = m_options.startDirectory;
+  // Only when the caller did not say where to open: an explicit current_folder is
+  // a decision about this request and outranks whatever we remember.
+  if (start.empty() && !m_options.rememberKey.empty() && m_host != nullptr) {
+    if (const auto remembered = m_host->rememberedDirectory(m_options.rememberKey)) {
+      start = *remembered;
+    }
+  }
+  m_currentDirectory = resolveStartDirectory(start);
   m_filterQuery.clear();
   m_viewMode = m_options.defaultViewMode == FileDialogViewMode::Grid ? ViewMode::Grid : ViewMode::List;
   m_sortField = FileDialogSortField::Name;
@@ -639,7 +704,7 @@ void FileDialogView::onOpen(std::string_view /*context*/) {
   m_thumbnailRefreshPending = false;
   m_currentFilter = m_options.currentFilter < m_options.filters.size() ? m_options.currentFilter : 0;
   m_pendingOverwrite.clear();
-  setFooterMode(false);
+  setFooterMode(Footer::Default);
 
   if (m_filterSelect != nullptr) {
     const bool hasFilters = !m_options.filters.empty();
@@ -784,6 +849,11 @@ bool FileDialogView::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers,
   // away a filename the user just typed.
   if (confirmingOverwrite() && sym == XKB_KEY_Escape) {
     cancelOverwriteConfirm();
+    return true;
+  }
+
+  if (m_newFolderRow != nullptr && m_newFolderRow->visible() && sym == XKB_KEY_Escape) {
+    cancelNewFolder();
     return true;
   }
 
@@ -957,6 +1027,28 @@ void FileDialogView::rebuildBreadcrumb() {
                 return;
               }
               navigateUp();
+            });
+          },
+      })
+  );
+
+  m_breadcrumbRow->addChild(
+      ui::button({
+          .out = &m_newFolderButton,
+          .glyph = "folder-plus",
+          .glyphSize = Style::fontSizeBody * scale,
+          .variant = ButtonVariant::Default,
+          .minWidth = Style::controlHeightSm * scale,
+          .minHeight = Style::controlHeightSm * scale,
+          .padding = Style::spaceXs * scale,
+          .radius = Style::scaledRadiusMd(scale),
+          .onClick = [this]() {
+            const std::weak_ptr<void> aliveGuard = m_aliveGuard;
+            DeferredCall::callLater([this, aliveGuard]() {
+              if (aliveGuard.expired()) {
+                return;
+              }
+              beginNewFolder();
             });
           },
       })
@@ -1512,7 +1604,7 @@ void FileDialogView::beginOverwriteConfirm(std::filesystem::path target) {
         i18n::tr("ui.dialogs.file.overwrite.message", "name", m_pendingOverwrite.filename().string())
     );
   }
-  setFooterMode(true);
+  setFooterMode(Footer::Overwrite);
 }
 
 void FileDialogView::cancelOverwriteConfirm() {
@@ -1520,20 +1612,66 @@ void FileDialogView::cancelOverwriteConfirm() {
     return;
   }
   m_pendingOverwrite.clear();
-  setFooterMode(false);
+  setFooterMode(Footer::Default);
 }
 
-void FileDialogView::setFooterMode(bool confirming) {
-  if (m_bottomRow != nullptr) {
-    m_bottomRow->setVisible(!confirming);
-    m_bottomRow->setParticipatesInLayout(!confirming);
-  }
-  if (m_overwriteRow != nullptr) {
-    m_overwriteRow->setVisible(confirming);
-    m_overwriteRow->setParticipatesInLayout(confirming);
-  }
+void FileDialogView::setFooterMode(Footer mode) {
+  const auto show = [](Flex* row, bool visible) {
+    if (row == nullptr) {
+      return;
+    }
+    row->setVisible(visible);
+    row->setParticipatesInLayout(visible);
+  };
+  show(m_bottomRow, mode == Footer::Default);
+  show(m_overwriteRow, mode == Footer::Overwrite);
+  show(m_newFolderRow, mode == Footer::NewFolder);
   requestLayout();
   requestRedraw();
+}
+
+void FileDialogView::beginNewFolder() {
+  if (m_newFolderInput == nullptr) {
+    return;
+  }
+  m_pendingOverwrite.clear(); // one prompt at a time
+  m_newFolderInput->setValue("");
+  if (m_newFolderError != nullptr) {
+    m_newFolderError->setText("");
+    m_newFolderError->setVisible(false);
+  }
+  setFooterMode(Footer::NewFolder);
+  focusHostArea(m_newFolderInput->inputArea());
+}
+
+void FileDialogView::cancelNewFolder() { setFooterMode(Footer::Default); }
+
+void FileDialogView::commitNewFolder() {
+  if (m_newFolderInput == nullptr) {
+    return;
+  }
+  const std::string name = m_newFolderInput->value();
+  // A name, not a path: a slash would silently create somewhere else, and the
+  // relative entries would escape the directory the user is looking at.
+  const bool valid = !name.empty() && name != "." && name != ".." && name.find('/') == std::string::npos;
+
+  std::error_code ec;
+  const std::filesystem::path target = m_currentDirectory / name;
+  const bool created = valid && std::filesystem::create_directory(target, ec) && !ec;
+
+  if (!created) {
+    if (m_newFolderError != nullptr) {
+      m_newFolderError->setText(i18n::tr("ui.dialogs.file.new-folder.failed"));
+      m_newFolderError->setVisible(true);
+    }
+    requestLayout();
+    requestRedraw();
+    return;
+  }
+
+  setFooterMode(Footer::Default);
+  // Step into it, which is what the user wanted the folder for.
+  navigateInto(target);
 }
 
 void FileDialogView::applyFilterIndex(std::size_t index) {
@@ -1676,13 +1814,24 @@ void FileDialogView::focusHostArea(InputArea* area) {
 
 InputArea* FileDialogView::hostFocusedArea() const { return m_host != nullptr ? m_host->focusedArea() : nullptr; }
 
+void FileDialogView::rememberCurrentDirectory() {
+  // Recorded on accept only. Remembering a directory the user merely browsed
+  // through and then cancelled out of would move them somewhere they rejected.
+  if (m_options.rememberKey.empty() || m_host == nullptr || m_currentDirectory.empty()) {
+    return;
+  }
+  m_host->rememberDirectory(m_options.rememberKey, m_currentDirectory.string());
+}
+
 void FileDialogView::acceptDialog(std::optional<std::filesystem::path> result) {
+  rememberCurrentDirectory();
   if (m_host != nullptr) {
     m_host->accept(std::move(result));
   }
 }
 
 void FileDialogView::acceptDialogMultiple(std::vector<std::filesystem::path> results) {
+  rememberCurrentDirectory();
   if (m_host != nullptr) {
     m_host->acceptMultiple(std::move(results));
   }

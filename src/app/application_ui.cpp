@@ -940,7 +940,7 @@ void Application::initBarDockAndLayout() {
   GlyphPickerDialog::setPresenter(m_settingsWindow.glyphPickerDialogPresenter());
   // The portal's dialog gets its own layer surface; anything raised from settings
   // stays the attached modal. The panel routes between them.
-  auto fileDialogPanel = std::make_unique<FileDialogPanel>(&m_thumbnailService, &m_wayland);
+  auto fileDialogPanel = std::make_unique<FileDialogPanel>(&m_thumbnailService, &m_wayland, &m_configService);
   m_fileDialogPanel = fileDialogPanel.get();
   m_fileDialogPanel->setAttachedPresenter(m_settingsWindow.fileDialogPresenter());
   m_panelManager.registerPanel(FileDialogPanel::kPanelId, std::move(fileDialogPanel));

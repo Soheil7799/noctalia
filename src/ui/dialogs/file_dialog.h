@@ -37,6 +37,9 @@ struct FileDialogOptions {
   std::vector<FileDialogFilter> filters;
   /// Which of `filters` starts selected. Out-of-range falls back to the first.
   std::size_t currentFilter = 0;
+  /// Identity the dialog remembers a directory under, so the next request from
+  /// the same caller reopens where it left off. Empty disables the memory.
+  std::string rememberKey;
   std::string defaultFilename;
   std::string title;
   /// Overrides the confirm button's text when the caller asked for specific

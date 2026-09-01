@@ -5,6 +5,7 @@
 #include "ui/dialogs/file_dialog.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -41,6 +42,12 @@ public:
   virtual void acceptMultiple(std::vector<std::filesystem::path> results) {
     accept(results.empty() ? std::nullopt : std::optional{std::move(results.front())});
   }
+  /// Last directory the caller settled on, if the host persists such things.
+  /// Defaulted so a host without storage simply never remembers.
+  [[nodiscard]] virtual std::optional<std::string> rememberedDirectory(std::string_view /*key*/) const {
+    return std::nullopt;
+  }
+  virtual void rememberDirectory(std::string_view /*key*/, std::string_view /*path*/) {}
   virtual void cancel() = 0;
 };
 
@@ -116,7 +123,14 @@ private:
   /// Save-mode guard: hold the request until the user agrees to replace.
   void beginOverwriteConfirm(std::filesystem::path target);
   void cancelOverwriteConfirm();
-  void setFooterMode(bool confirming);
+  /// Which row occupies the footer. The prompts are alternatives to the normal
+  /// actions, not overlays, so exactly one is ever in layout.
+  enum class Footer : std::uint8_t { Default, Overwrite, NewFolder };
+  void setFooterMode(Footer mode);
+  void beginNewFolder();
+  void cancelNewFolder();
+  void commitNewFolder();
+  void rememberCurrentDirectory();
   /// The typed name with the selected filter's extension applied, when the name
   /// carries none of its own.
   [[nodiscard]] std::string filenameWithFilterExtension(std::string name) const;
@@ -167,6 +181,10 @@ private:
   Select* m_filterSelect = nullptr;
   Flex* m_bottomRow = nullptr;
   Flex* m_overwriteRow = nullptr;
+  Flex* m_newFolderRow = nullptr;
+  Input* m_newFolderInput = nullptr;
+  Label* m_newFolderError = nullptr;
+  Button* m_newFolderButton = nullptr;
   Label* m_overwriteLabel = nullptr;
   /// Non-empty only while the replace prompt is up; it is also the flag.
   std::filesystem::path m_pendingOverwrite;

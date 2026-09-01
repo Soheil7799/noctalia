@@ -4,6 +4,7 @@
 
 namespace {}
 
+#include "config/config_service.h"
 #include "core/log.h"
 #include "render/render_context.h"
 #include "render/scene/input_dispatcher.h"
@@ -114,6 +115,23 @@ InputArea* FileDialogPopup::focusedArea() const {
 void FileDialogPopup::accept(std::optional<std::filesystem::path> result) {
   closeAfterAccept();
   FileDialog::complete(std::move(result));
+}
+
+namespace {
+  /// Owner table in state.toml. Shared by both hosts, so a directory remembered
+  /// from one is found by the other.
+  constexpr std::string_view kStateOwner = "file_dialog";
+} // namespace
+
+std::optional<std::string> FileDialogPopup::rememberedDirectory(std::string_view key) const {
+  const auto* cfg = config();
+  return cfg != nullptr ? cfg->stateString(kStateOwner, key) : std::nullopt;
+}
+
+void FileDialogPopup::rememberDirectory(std::string_view key, std::string_view path) {
+  if (auto* cfg = config(); cfg != nullptr) {
+    (void)cfg->setStateString(kStateOwner, key, path);
+  }
 }
 
 std::uint32_t FileDialogPopup::currentModifiers() const {

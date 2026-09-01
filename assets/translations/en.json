@@ -4094,6 +4094,11 @@
         "overwrite": {
           "message": "{name} already exists. Replace it?",
           "replace": "Replace"
+        },
+        "new-folder": {
+          "placeholder": "Folder name",
+          "create": "Create",
+          "failed": "Could not create folder"
         }
       },
       "glyph-picker": {

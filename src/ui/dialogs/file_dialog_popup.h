@@ -33,6 +33,8 @@ public:
   [[nodiscard]] InputArea* focusedArea() const override;
   void accept(std::optional<std::filesystem::path> result) override;
   [[nodiscard]] std::uint32_t currentModifiers() const override;
+  [[nodiscard]] std::optional<std::string> rememberedDirectory(std::string_view key) const override;
+  void rememberDirectory(std::string_view key, std::string_view path) override;
   void acceptMultiple(std::vector<std::filesystem::path> results) override;
   void cancel() override { DialogPopupHost::cancel(); }
 

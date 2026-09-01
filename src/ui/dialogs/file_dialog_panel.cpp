@@ -1,13 +1,14 @@
 #include "ui/dialogs/file_dialog_panel.h"
 
+#include "config/config_service.h"
 #include "render/scene/node.h"
 #include "shell/panel/panel_manager.h"
 #include "wayland/wayland_connection.h"
 
 #include <utility>
 
-FileDialogPanel::FileDialogPanel(ThumbnailService* thumbnails, WaylandConnection* wayland)
-    : m_thumbnails(thumbnails), m_wayland(wayland) {}
+FileDialogPanel::FileDialogPanel(ThumbnailService* thumbnails, WaylandConnection* wayland, ConfigService* config)
+    : m_thumbnails(thumbnails), m_wayland(wayland), m_config(config) {}
 
 FileDialogPanel::~FileDialogPanel() = default;
 
@@ -110,6 +111,21 @@ void FileDialogPanel::requestRedraw() { PanelManager::instance().requestRedraw()
 void FileDialogPanel::focusArea(InputArea* area) { PanelManager::instance().inputDispatcher().setFocus(area); }
 
 InputArea* FileDialogPanel::focusedArea() const { return PanelManager::instance().inputDispatcher().focusedArea(); }
+
+namespace {
+  /// Same owner table as the settings-hosted dialog, so the memory is shared.
+  constexpr std::string_view kStateOwner = "file_dialog";
+} // namespace
+
+std::optional<std::string> FileDialogPanel::rememberedDirectory(std::string_view key) const {
+  return m_config != nullptr ? m_config->stateString(kStateOwner, key) : std::nullopt;
+}
+
+void FileDialogPanel::rememberDirectory(std::string_view key, std::string_view path) {
+  if (m_config != nullptr) {
+    (void)m_config->setStateString(kStateOwner, key, path);
+  }
+}
 
 std::uint32_t FileDialogPanel::currentModifiers() const {
   return m_wayland != nullptr ? m_wayland->keyboardModifiers() : 0U;

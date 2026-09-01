@@ -42,6 +42,14 @@ namespace file_chooser_util {
   /// verbatim puts a stray underscore on the button.
   [[nodiscard]] std::string stripMnemonics(std::string_view label);
 
+  /// A state-file key for an application id.
+  ///
+  /// App ids are free-form and reach us over the bus, so they cannot be written
+  /// into a TOML table name unexamined. Everything outside [A-Za-z0-9._-] folds
+  /// to '_', and an empty or unusable id becomes "default" -- callers that do not
+  /// identify themselves then share one memory rather than losing it.
+  [[nodiscard]] std::string stateKeyForApp(std::string_view appId);
+
   /// Backends must hand back normalized file:// URIs. Percent-encodes everything
   /// outside RFC 3986 unreserved, keeping '/' so the path stays a path.
   [[nodiscard]] std::string toFileUri(const std::filesystem::path& path);

@@ -79,6 +79,25 @@ namespace file_chooser_util {
     return out;
   }
 
+  std::string stateKeyForApp(std::string_view appId) {
+    std::string key;
+    key.reserve(appId.size());
+    for (const char c : appId) {
+      const bool safe = (c >= 'A' && c <= 'Z')
+          || (c >= 'a' && c <= 'z')
+          || (c >= '0' && c <= '9')
+          || c == '.'
+          || c == '-'
+          || c == '_';
+      key.push_back(safe ? c : '_');
+    }
+    // All-separator ids ("...", "___") are no more identifying than an empty one.
+    if (key.empty() || key.find_first_not_of("._-") == std::string::npos) {
+      return "default";
+    }
+    return key;
+  }
+
   std::string toFileUri(const std::filesystem::path& path) {
     static constexpr std::string_view kHex = "0123456789ABCDEF";
     const std::string text = path.string();

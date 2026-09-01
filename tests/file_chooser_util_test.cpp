@@ -15,6 +15,7 @@ namespace {
 
   using file_chooser_util::extensionFromGlob;
   using file_chooser_util::extensionsFromGlobs;
+  using file_chooser_util::stateKeyForApp;
   using file_chooser_util::stripMnemonics;
   using file_chooser_util::toFileUri;
 
@@ -111,6 +112,13 @@ int main() {
   ok &= check(stripMnemonics("") == "", "empty label");
   ok &= check(stripMnemonics("_") == "", "trailing marker with nothing to mark");
   ok &= check(stripMnemonics("__") == "_", "escaped underscore alone");
+
+  // -- state keys for app ids ----------------------------------------------
+  ok &= check(stateKeyForApp("org.mozilla.firefox") == "org.mozilla.firefox", "well-formed id kept");
+  ok &= check(stateKeyForApp("my app/v2") == "my_app_v2", "spaces and slashes folded");
+  ok &= check(stateKeyForApp("") == "default", "empty id shares one memory");
+  ok &= check(stateKeyForApp("...") == "default", "separator-only id is not an identity");
+  ok &= check(stateKeyForApp("a\nb") == "a_b", "newline cannot break the table name");
 
   return ok ? 0 : 1;
 }

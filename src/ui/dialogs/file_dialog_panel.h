@@ -6,6 +6,7 @@
 
 #include <memory>
 
+class ConfigService;
 class ThumbnailService;
 class WaylandConnection;
 
@@ -24,7 +25,7 @@ class FileDialogPanel final : public Panel, public FileDialogHost, public FileDi
 public:
   static constexpr const char* kPanelId = "file-dialog";
 
-  FileDialogPanel(ThumbnailService* thumbnails, WaylandConnection* wayland);
+  FileDialogPanel(ThumbnailService* thumbnails, WaylandConnection* wayland, ConfigService* config);
   ~FileDialogPanel() override;
 
   /// Where a non-standalone request goes; normally the settings modal.
@@ -55,6 +56,8 @@ public:
   void accept(std::optional<std::filesystem::path> result) override;
   void acceptMultiple(std::vector<std::filesystem::path> results) override;
   [[nodiscard]] std::uint32_t currentModifiers() const override;
+  [[nodiscard]] std::optional<std::string> rememberedDirectory(std::string_view key) const override;
+  void rememberDirectory(std::string_view key, std::string_view path) override;
   void cancel() override;
 
 private:
@@ -64,6 +67,7 @@ private:
 
   ThumbnailService* m_thumbnails = nullptr;
   WaylandConnection* m_wayland = nullptr;
+  ConfigService* m_config = nullptr;
   FileDialogPresenter* m_attached = nullptr;
   std::unique_ptr<FileDialogView> m_dialog;
   /// Set while answering, so the close that follows does not also report a
